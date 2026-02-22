@@ -1,0 +1,20 @@
+int getKey(unsigned char key_out[32]){
+    /*
+    char hostname[256];
+
+#ifdef _WIN32
+    DWORD size = sizeof(hostname);
+    if (!GetComputerNameA(hostname, &size))
+        return 0;
+#else
+    if (gethostname(hostname, sizeof(hostname)) != 0)
+        return 0;
+#endif
+    */
+    char *hostname = "DESKTOP-42069";
+    SHA256((unsigned char*)hostname,
+           strlen(hostname),
+           key_out);
+
+    return 1;
+}
