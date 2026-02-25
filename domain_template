@@ -1,0 +1,25 @@
+int getKey(unsigned char key_out[32]){
+    
+    char domain[256];
+
+#ifdef _WIN32
+
+	DWORD size = GetEnvironmentVariableA("DOMAIN", domain, sizeof(domain));
+	if (size == 0 || size >= sizeof(domain)) {
+		return 0;
+	}
+
+#else
+	if (!getenv("DOMAIN")) {
+		return 0;
+	}
+	strncpy(domain, getenv("DOMAIN"), sizeof(domain) - 1);
+	domain[sizeof(domain) - 1] = '\0';
+#endif
+
+    SHA256((unsigned char*)domain,
+           strlen(domain),
+           key_out);
+
+    return 1;
+}

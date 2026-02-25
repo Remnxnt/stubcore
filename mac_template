@@ -1,0 +1,44 @@
+int getKey(unsigned char key_out[32]) {
+	
+	char MAC[256];
+
+
+#ifdef _WIN32
+
+	IP_ADAPTER_INFO AdapterInfo[16];
+	DWORD dwBufLen = sizeof(AdapterInfo);
+	DWORD dwStatus = GetAdaptersInfo(AdapterInfo, &dwBufLen);
+	if (dwStatus != ERROR_SUCCESS) {
+		return 0;
+	}
+	PIP_ADAPTER_INFO pAdapterInfo = AdapterInfo;
+	while (pAdapterInfo) {
+		if (pAdapterInfo->AddressLength == 6) {
+			sprintf(MAC, "%02X%02X%02X%02X%02X%02X",
+				pAdapterInfo->Address[0],
+				pAdapterInfo->Address[1],
+				pAdapterInfo->Address[2],
+				pAdapterInfo->Address[3],
+				pAdapterInfo->Address[4],
+				pAdapterInfo->Address[5]);
+			break;
+		}
+		pAdapterInfo = pAdapterInfo->Next;
+	}
+	
+
+#else
+
+	FILE* f = fopen("/sys/class/net/eth0/address", "r");
+	if (!f) return 0;
+	fgets(MAC, sizeof(MAC), f);
+	fclose(f);
+
+#endif
+
+	SHA256((unsigned char*)MAC,
+		strlen(MAC),
+		key_out);
+
+	return 1;
+}
