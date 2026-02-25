@@ -304,7 +304,7 @@ int main(int argc, char *argv[])
 	system("cl.exe /nologo /MT stub.c /I \"C:\\Program Files\\OpenSSL-Win64\\include\" /link /LIBPATH:\"C:\\Program Files\\OpenSSL-Win64\\lib\\VC\\x64\\MT\" libcrypto_static.lib libssl_static.lib advapi32.lib user32.lib crypt32.lib ws2_32.lib gdi32.lib >NUL 2>NUL");
     //system("gcc -s -o out wrapped.c -lcrypto");
 	print("Done!");
-    system("del stub.c,stub.obj,injector.c,injector.obj,injector.exe");
+    system("del stub.c,stub.obj,injector.c,injector.obj,injector.exe,*.bin");
 
     return 0;
 }

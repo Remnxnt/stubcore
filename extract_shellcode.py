@@ -1,5 +1,5 @@
 import pefile
-
+import sys
 
 def save_raw_shellcode(exe_path, bin_path):
     try:
@@ -26,4 +26,4 @@ def save_raw_shellcode(exe_path, bin_path):
 
 
 if __name__ == "__main__":
-    save_raw_shellcode("injector.exe", "ntapi-inject.bin")
+    save_raw_shellcode("injector.exe", sys.argv[1])
