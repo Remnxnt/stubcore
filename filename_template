@@ -1,0 +1,25 @@
+int getFileExists(unsigned char key_out[32], char* fname_xor, unsigned int fname_len) {
+	
+	char xorkey[256];
+	char fname[256];
+
+	//Recompute the xor key
+
+	for (int i = 0; i < fname_len; i++)
+		xorkey[i] = 'a' + i;
+	xorkey[fname_len] = '\0';
+	
+	for (size_t i = 0; i < fname_len; i++)
+		fname[i] = fname_xor[i] ^ xorkey[i];
+	fname[fname_len] = '\0';
+
+	FILE* f = fopen(fname, "rb");
+	if (!f) return 0;
+	
+	SHA256((unsigned char*)fname,
+		strlen(fname),
+		key_out);
+
+
+	return 1;
+}

