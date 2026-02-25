@@ -1,5 +1,5 @@
 int getKey(unsigned char key_out[32]){
-    /*
+    
     char hostname[256];
 
 #ifdef _WIN32
@@ -10,8 +10,6 @@ int getKey(unsigned char key_out[32]){
     if (gethostname(hostname, sizeof(hostname)) != 0)
         return 0;
 #endif
-    */
-    char *hostname = "DESKTOP-42069";
     SHA256((unsigned char*)hostname,
            strlen(hostname),
            key_out);

